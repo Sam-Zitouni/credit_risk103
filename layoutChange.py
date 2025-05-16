@@ -70,12 +70,11 @@ def load_data():
                                           random_state=123)
         df_balanced = pd.concat([df_majority_downsampled, df_minority])
         df_balanced = df_balanced.reset_index(drop=True)
-        return df_balanced, num_imputer, numerical_cols, categorical_cols, bins, labels
+        return df_balanced, num_imputer, tuple(numerical_cols), tuple(categorical_cols), bins, labels
     except Exception as e:
         st.error(f"Failed to load cs-training.csv: {str(e)}. Please ensure 'cs-training.csv' is in the project directory.")
-        return pd.DataFrame(), None, [], [], [], []
+        return pd.DataFrame(), None, (), (), [], []
 
-@st.cache_data
 def load_test_data(num_imputer, numerical_cols, categorical_cols, bins, labels):
     try:
         # Load cs-test.csv
@@ -84,14 +83,14 @@ def load_test_data(num_imputer, numerical_cols, categorical_cols, bins, labels):
         df_test = df_test.drop(columns=['Unnamed: 0'], errors='ignore')
 
         # Impute numerical features using the training imputer
-        df_test[numerical_cols[:-1]] = num_imputer.transform(df_test[numerical_cols[:-1]])  # Exclude AGE_PAY_0_INTERACTION
+        df_test[list(numerical_cols)[:-1]] = num_imputer.transform(df_test[list(numerical_cols)[:-1]])  # Exclude AGE_PAY_0_INTERACTION
 
         # Feature engineering (same as training)
         df_test['AGE_GROUP'] = pd.cut(df_test['age'], bins=bins, labels=labels, include_lowest=True)
         df_test['AGE_PAY_0_INTERACTION'] = df_test['age'] * df_test['NumberOfTime30-59DaysPastDueNotWorse']
 
         # Update numerical_cols to include AGE_PAY_0_INTERACTION
-        numerical_cols.append('AGE_PAY_0_INTERACTION')
+        numerical_cols = list(numerical_cols) + ['AGE_PAY_0_INTERACTION']
         return df_test
     except Exception as e:
         st.error(f"Failed to load cs-test.csv: {str(e)}. Please ensure 'cs-test.csv' is in the project directory.")
@@ -125,8 +124,8 @@ df_test_encoded = df_test_encoded[df_encoded.columns.drop('default')]  # Align c
 
 # Standardize numerical features
 scaler = StandardScaler()
-df_encoded[numerical_cols] = scaler.fit_transform(df_encoded[numerical_cols])
-df_test_encoded[numerical_cols] = scaler.transform(df_test_encoded[numerical_cols])
+df_encoded[list(numerical_cols)] = scaler.fit_transform(df_encoded[list(numerical_cols)])
+df_test_encoded[list(numerical_cols)] = scaler.transform(df_test_encoded[list(numerical_cols)])
 
 # 2. WoE and IV Calculation
 def calculate_woe_iv(df, feature, target):
@@ -216,7 +215,7 @@ if submitted:
         if col not in input_df.columns:
             input_df[col] = 0
     input_df = input_df[selected_features]
-    input_df[numerical_cols] = scaler.transform(input_df[numerical_cols])
+    input_df[list(numerical_cols)] = scaler.transform(input_df[list(numerical_cols)])
     for feature in selected_features:
         if feature in optb_dict and optb_dict[feature] is not None:
             input_df[feature] = optb_dict[feature].transform(input_df[feature], metric="woe")
@@ -347,7 +346,7 @@ ax.set_ylabel('Average Predicted Probability of Default')
 st.pyplot(fig)
 
 fig, ax = plt.subplots()
-corr = df[numerical_cols + ['default']].corr()
+corr = df[list(numerical_cols) + ['default']].corr()
 sns.heatmap(corr, annot=False, cmap='coolwarm', ax=ax)
 ax.set_title('Feature Correlation Heatmap')
 st.pyplot(fig)
