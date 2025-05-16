@@ -29,10 +29,9 @@ It includes Expected Loss (EL) calculations, advanced visualizations, and detail
 # 1. Load and Preprocess the "Give Me Some Credit" Dataset
 @st.cache_data
 def load_data():
-    # Replace with actual URL or local path to cs-training.csv
-    # Download from: https://www.kaggle.com/competitions/GiveMeSomeCredit
-    url = "https://example.com/cs-training.csv"  # Update this!
-    df = pd.read_csv(url)
+    # Load from local file (place cs-training.csv in the same directory as this script)
+    file_path = "cs-training.csv"  # Ensure this file is in your project directory
+    df = pd.read_csv(file_path)
     df = df.rename(columns={'SeriousDlqin2yrs': 'default'})
     df = df.drop(columns=['Unnamed: 0'], errors='ignore')  # Drop index column if present
 
@@ -285,7 +284,7 @@ st.pyplot(fig)
 # Age vs. Default Rate
 fig, ax = plt.subplots()
 age_default_rate = df.groupby('AGE_GROUP')['default'].mean()
-sns.barplot(x='AGE_GROUP', y='default=\'default', data=age_default_rate.reset_index(), ax=ax)
+sns.barplot(x='AGE_GROUP', y='default', data=age_default_rate.reset_index(), ax=ax)
 ax.set_title('Default Rate by Age Group')
 ax.set_xlabel('Age Group')
 ax.set_ylabel('Default Rate')
