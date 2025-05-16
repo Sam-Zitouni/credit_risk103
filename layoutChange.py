@@ -36,27 +36,30 @@ def load_data():
         df_train = pd.read_csv(train_file_path)
         df_train = df_train.drop(columns=['Unnamed: 0'], errors='ignore')
 
-        # Feature engineering before imputation
+        # Rename target variable
+        df_train = df_train.rename(columns={'SeriousDlqin2yrs': 'default'})
+
+        # Define feature types before creating new columns
+        numerical_cols = ['RevolvingUtilizationOfUnsecuredLines', 'age', 'DebtRatio',
+                         'MonthlyIncome', 'NumberOfOpenCreditLinesAndLoans',
+                         'NumberRealEstateLoansOrLines', 'NumberOfDependents']
+        categorical_cols = ['NumberOfTime30-59DaysPastDueNotWorse', 'NumberOfTime60-89DaysPastDueNotWorse',
+                           'NumberOfTimes90DaysLate']
+
+        # Impute numerical features (excluding target)
+        num_imputer = SimpleImputer(strategy='median')
+        num_columns = numerical_cols  # Only numeric columns
+        df_train[num_columns] = num_imputer.fit_transform(df_train[num_columns])
+
+        # Feature engineering after numeric imputation
         bins = [20, 30, 40, 50, 60, 100]
         labels = ['20-30', '30-40', '40-50', '50-60', '60+']
         df_train['AGE_GROUP'] = pd.cut(df_train['age'], bins=bins, labels=labels, include_lowest=True)
         df_train['AGE_PAY_0_INTERACTION'] = df_train['age'] * df_train['NumberOfTime30-59DaysPastDueNotWorse']
 
-        # Define feature types
-        numerical_cols = ['RevolvingUtilizationOfUnsecuredLines', 'age', 'DebtRatio',
-                         'MonthlyIncome', 'NumberOfOpenCreditLinesAndLoans',
-                         'NumberRealEstateLoansOrLines', 'NumberOfDependents',
-                         'AGE_PAY_0_INTERACTION']
-        categorical_cols = ['NumberOfTime30-59DaysPastDueNotWorse', 'NumberOfTime60-89DaysPastDueNotWorse',
-                           'NumberOfTimes90DaysLate', 'AGE_GROUP']
-
-        # Rename target variable after feature engineering
-        df_train = df_train.rename(columns={'SeriousDlqin2yrs': 'default'})
-
-        # Impute numerical features (excluding target)
-        num_imputer = SimpleImputer(strategy='median')
-        num_columns = [col for col in df_train.columns if col != 'default']  # Exclude target
-        df_train[num_columns] = num_imputer.fit_transform(df_train[num_columns])
+        # Update feature types to include new columns
+        numerical_cols.append('AGE_PAY_0_INTERACTION')
+        categorical_cols.append('AGE_GROUP')
 
         # Balance the dataset using random undersampling
         df_majority = df_train[df_train['default'] == 0]
@@ -80,12 +83,15 @@ def load_test_data(num_imputer, numerical_cols, categorical_cols, bins, labels):
         df_test = pd.read_csv(test_file_path)
         df_test = df_test.drop(columns=['Unnamed: 0'], errors='ignore')
 
+        # Impute numerical features using the training imputer
+        df_test[numerical_cols[:-1]] = num_imputer.transform(df_test[numerical_cols[:-1]])  # Exclude AGE_PAY_0_INTERACTION
+
         # Feature engineering (same as training)
         df_test['AGE_GROUP'] = pd.cut(df_test['age'], bins=bins, labels=labels, include_lowest=True)
         df_test['AGE_PAY_0_INTERACTION'] = df_test['age'] * df_test['NumberOfTime30-59DaysPastDueNotWorse']
 
-        # Impute numerical features using the training imputer
-        df_test[df_test.columns] = num_imputer.transform(df_test)  # Now columns match
+        # Update numerical_cols to include AGE_PAY_0_INTERACTION
+        numerical_cols.append('AGE_PAY_0_INTERACTION')
         return df_test
     except Exception as e:
         st.error(f"Failed to load cs-test.csv: {str(e)}. Please ensure 'cs-test.csv' is in the project directory.")
