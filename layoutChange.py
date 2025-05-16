@@ -39,12 +39,22 @@ def load_data():
         # Rename target variable
         df_train = df_train.rename(columns={'SeriousDlqin2yrs': 'default'})
 
+        # Debugging: Check column names
+        st.write("Columns in cs-training.csv:", df_train.columns.tolist())
+
         # Define feature types before creating new columns
         numerical_cols = ['RevolvingUtilizationOfUnsecuredLines', 'age', 'DebtRatio',
                          'MonthlyIncome', 'NumberOfOpenCreditLinesAndLoans',
                          'NumberRealEstateLoansOrLines', 'NumberOfDependents']
         categorical_cols = ['NumberOfTime30-59DaysPastDueNotWorse', 'NumberOfTime60-89DaysPastDueNotWorse',
                            'NumberOfTimes90DaysLate']
+
+        # Validate that all expected columns exist
+        missing_num_cols = [col for col in numerical_cols if col not in df_train.columns]
+        missing_cat_cols = [col for col in categorical_cols if col not in df_train.columns]
+        if missing_num_cols or missing_cat_cols:
+            st.error(f"Missing columns in cs-training.csv:\nNumerical: {missing_num_cols}\nCategorical: {missing_cat_cols}")
+            return pd.DataFrame(), None, (), (), [], []
 
         # Impute numerical features (excluding target)
         num_imputer = SimpleImputer(strategy='median')
@@ -82,15 +92,25 @@ def load_test_data(num_imputer, numerical_cols, categorical_cols, bins, labels):
         df_test = pd.read_csv(test_file_path)
         df_test = df_test.drop(columns=['Unnamed: 0'], errors='ignore')
 
+        # Debugging: Check column names
+        st.write("Columns in cs-test.csv:", df_test.columns.tolist())
+
+        # Validate that all expected columns exist
+        numerical_cols_list = list(numerical_cols)[:-1]  # Exclude AGE_PAY_0_INTERACTION for now
+        categorical_cols_list = list(categorical_cols)[:-1]  # Exclude AGE_GROUP for now
+        missing_num_cols = [col for col in numerical_cols_list if col not in df_test.columns]
+        missing_cat_cols = [col for col in categorical_cols_list if col not in df_test.columns]
+        if missing_num_cols or missing_cat_cols:
+            st.error(f"Missing columns in cs-test.csv:\nNumerical: {missing_num_cols}\nCategorical: {missing_cat_cols}")
+            return pd.DataFrame()
+
         # Impute numerical features using the training imputer
-        df_test[list(numerical_cols)[:-1]] = num_imputer.transform(df_test[list(numerical_cols)[:-1]])  # Exclude AGE_PAY_0_INTERACTION
+        df_test[numerical_cols_list] = num_imputer.transform(df_test[numerical_cols_list])
 
         # Feature engineering (same as training)
         df_test['AGE_GROUP'] = pd.cut(df_test['age'], bins=bins, labels=labels, include_lowest=True)
         df_test['AGE_PAY_0_INTERACTION'] = df_test['age'] * df_test['NumberOfTime30-59DaysPastDueNotWorse']
 
-        # Update numerical_cols to include AGE_PAY_0_INTERACTION
-        numerical_cols = list(numerical_cols) + ['AGE_PAY_0_INTERACTION']
         return df_test
     except Exception as e:
         st.error(f"Failed to load cs-test.csv: {str(e)}. Please ensure 'cs-test.csv' is in the project directory.")
@@ -107,10 +127,25 @@ if df_test.empty:
     st.stop()
 st.write("Test Dataset Loaded:", df_test.head())
 
+# Debugging: Check columns after loading
+st.write("Columns in df after loading:", df.columns.tolist())
+st.write("Columns in df_test after loading:", df_test.columns.tolist())
+
 # Handle categorical imputation and encoding
 cat_imputer = SimpleImputer(strategy='most_frequent')
-df[categorical_cols] = cat_imputer.fit_transform(df[categorical_cols])
-df_test[categorical_cols] = cat_imputer.transform(df_test[categorical_cols])
+# Verify categorical columns exist in df
+missing_cat_cols = [col for col in categorical_cols if col not in df.columns]
+if missing_cat_cols:
+    st.error(f"Categorical columns missing in df: {missing_cat_cols}")
+    st.stop()
+df[list(categorical_cols)] = cat_imputer.fit_transform(df[list(categorical_cols)])
+
+# Verify categorical columns exist in df_test
+missing_cat_cols_test = [col for col in categorical_cols if col not in df_test.columns]
+if missing_cat_cols_test:
+    st.error(f"Categorical columns missing in df_test: {missing_cat_cols_test}")
+    st.stop()
+df_test[list(categorical_cols)] = cat_imputer.transform(df_test[list(categorical_cols)])
 
 # Encode categorical variables
 df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
