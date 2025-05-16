@@ -31,15 +31,32 @@ Batch predictions are provided for cs-test.csv.
 @st.cache_data
 def load_data():
     try:
-        # Load cs-training.csv (labeled data for training and evaluation)
+        # Load cs-training.csv
         train_file_path = "cs-training.csv"
         df_train = pd.read_csv(train_file_path)
-        df_train = df_train.rename(columns={'SeriousDlqin2yrs': 'default'})
         df_train = df_train.drop(columns=['Unnamed: 0'], errors='ignore')
 
-        # Handle missing values early
+        # Feature engineering before imputation
+        bins = [20, 30, 40, 50, 60, 100]
+        labels = ['20-30', '30-40', '40-50', '50-60', '60+']
+        df_train['AGE_GROUP'] = pd.cut(df_train['age'], bins=bins, labels=labels, include_lowest=True)
+        df_train['AGE_PAY_0_INTERACTION'] = df_train['age'] * df_train['NumberOfTime30-59DaysPastDueNotWorse']
+
+        # Define feature types
+        numerical_cols = ['RevolvingUtilizationOfUnsecuredLines', 'age', 'DebtRatio',
+                         'MonthlyIncome', 'NumberOfOpenCreditLinesAndLoans',
+                         'NumberRealEstateLoansOrLines', 'NumberOfDependents',
+                         'AGE_PAY_0_INTERACTION']
+        categorical_cols = ['NumberOfTime30-59DaysPastDueNotWorse', 'NumberOfTime60-89DaysPastDueNotWorse',
+                           'NumberOfTimes90DaysLate', 'AGE_GROUP']
+
+        # Rename target variable after feature engineering
+        df_train = df_train.rename(columns={'SeriousDlqin2yrs': 'default'})
+
+        # Impute numerical features (excluding target)
         num_imputer = SimpleImputer(strategy='median')
-        df_train[df_train.columns] = num_imputer.fit_transform(df_train)
+        num_columns = [col for col in df_train.columns if col != 'default']  # Exclude target
+        df_train[num_columns] = num_imputer.fit_transform(df_train[num_columns])
 
         # Balance the dataset using random undersampling
         df_majority = df_train[df_train['default'] == 0]
@@ -50,63 +67,60 @@ def load_data():
                                           random_state=123)
         df_balanced = pd.concat([df_majority_downsampled, df_minority])
         df_balanced = df_balanced.reset_index(drop=True)
-        return df_balanced, num_imputer  # Return imputer for use with test data
+        return df_balanced, num_imputer, numerical_cols, categorical_cols, bins, labels
     except Exception as e:
         st.error(f"Failed to load cs-training.csv: {str(e)}. Please ensure 'cs-training.csv' is in the project directory.")
-        return pd.DataFrame(), None
+        return pd.DataFrame(), None, [], [], [], []
 
 @st.cache_data
-def load_test_data():
+def load_test_data(num_imputer, numerical_cols, categorical_cols, bins, labels):
     try:
-        # Load cs-test.csv (unlabeled data for predictions)
+        # Load cs-test.csv
         test_file_path = "cs-test.csv"
         df_test = pd.read_csv(test_file_path)
         df_test = df_test.drop(columns=['Unnamed: 0'], errors='ignore')
+
+        # Feature engineering (same as training)
+        df_test['AGE_GROUP'] = pd.cut(df_test['age'], bins=bins, labels=labels, include_lowest=True)
+        df_test['AGE_PAY_0_INTERACTION'] = df_test['age'] * df_test['NumberOfTime30-59DaysPastDueNotWorse']
+
+        # Impute numerical features using the training imputer
+        df_test[df_test.columns] = num_imputer.transform(df_test)  # Now columns match
         return df_test
     except Exception as e:
         st.error(f"Failed to load cs-test.csv: {str(e)}. Please ensure 'cs-test.csv' is in the project directory.")
         return pd.DataFrame()
 
-df, num_imputer = load_data()
+# Load datasets
+df, num_imputer, numerical_cols, categorical_cols, bins, labels = load_data()
 if df.empty:
     st.stop()
 st.write("Training Dataset Loaded (Balanced):", df.head())
 
-df_test = load_test_data()
+df_test = load_test_data(num_imputer, numerical_cols, categorical_cols, bins, labels)
 if df_test.empty:
     st.stop()
 st.write("Test Dataset Loaded:", df_test.head())
 
-# Feature Engineering
-bins = [20, 30, 40, 50, 60, 100]
-labels = ['20-30', '30-40', '40-50', '50-60', '60+']
-df['AGE_GROUP'] = pd.cut(df['age'], bins=bins, labels=labels, include_lowest=True)
-df['AGE_PAY_0_INTERACTION'] = df['age'] * df['NumberOfTime30-59DaysPastDueNotWorse']
-df_test['AGE_GROUP'] = pd.cut(df_test['age'], bins=bins, labels=labels, include_lowest=True)
-df_test['AGE_PAY_0_INTERACTION'] = df_test['age'] * df_test['NumberOfTime30-59DaysPastDueNotWorse']
-
-# Define feature types
-numerical_cols = ['RevolvingUtilizationOfUnsecuredLines', 'age', 'DebtRatio',
-                  'MonthlyIncome', 'NumberOfOpenCreditLinesAndLoans',
-                  'NumberRealEstateLoansOrLines', 'NumberOfDependents',
-                  'AGE_PAY_0_INTERACTION']
-categorical_cols = ['NumberOfTime30-59DaysPastDueNotWorse', 'NumberOfTime60-89DaysPastDueNotWorse',
-                   'NumberOfTimes90DaysLate', 'AGE_GROUP']
-
-# Handle missing values
+# Handle categorical imputation and encoding
 cat_imputer = SimpleImputer(strategy='most_frequent')
 df[categorical_cols] = cat_imputer.fit_transform(df[categorical_cols])
-df_test[categorical_cols] = cat_imputer.transform(df_test[categorical_cols])  # Use training imputer
-df_test[df_test.columns] = num_imputer.transform(df_test)  # Use training imputer
+df_test[categorical_cols] = cat_imputer.transform(df_test[categorical_cols])
 
 # Encode categorical variables
 df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
 df_test_encoded = pd.get_dummies(df_test, columns=categorical_cols, drop_first=True)
 
+# Ensure test set has the same columns as training set
+missing_cols = set(df_encoded.columns) - set(df_test_encoded.columns) - {'default'}
+for col in missing_cols:
+    df_test_encoded[col] = 0
+df_test_encoded = df_test_encoded[df_encoded.columns.drop('default')]  # Align columns
+
 # Standardize numerical features
 scaler = StandardScaler()
 df_encoded[numerical_cols] = scaler.fit_transform(df_encoded[numerical_cols])
-df_test_encoded[numerical_cols] = scaler.transform(df_test_encoded[numerical_cols])  # Use training scaler
+df_test_encoded[numerical_cols] = scaler.transform(df_test_encoded[numerical_cols])
 
 # 2. WoE and IV Calculation
 def calculate_woe_iv(df, feature, target):
@@ -148,10 +162,6 @@ for feature in selected_features:
         df_woe = df_woe.drop(columns=[feature], errors='ignore')
         df_test_woe = df_test_woe.drop(columns=[feature], errors='ignore')
         selected_features.remove(feature)
-
-# Align columns between training and test sets
-df_woe = df_woe[selected_features]
-df_test_woe = df_test_woe[selected_features]
 
 # 3. Train-Test Split for Training Data
 X = df_woe[selected_features]
@@ -212,7 +222,7 @@ if submitted:
         st.error("High risk of default!")
     else:
         st.success("Low risk of default.")
-    lgd = 0.8  # Assumption: 80% Loss Given Default
+    lgd = 0.8
     ead = input_data['MonthlyIncome'] * input_data['RevolvingUtilizationOfUnsecuredLines']
     el = prob * lgd * ead
     st.write(f"**Expected Loss (EL):** ${el:,.2f}")
