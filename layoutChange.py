@@ -29,27 +29,35 @@ It includes Expected Loss (EL) calculations, advanced visualizations, and detail
 # 1. Load and Preprocess the "Give Me Some Credit" Dataset
 @st.cache_data
 def load_data():
-    # Load from local file (place cs-training.csv in the same directory as this script)
-    file_path = "cs-training.csv"  # Ensure this file is in your project directory
-    df = pd.read_csv(file_path)
-    df = df.rename(columns={'SeriousDlqin2yrs': 'default'})
-    df = df.drop(columns=['Unnamed: 0'], errors='ignore')  # Drop index column if present
+    try:
+        # Load from local file (place cs-training.csv in the same directory as this script)
+        file_path = "cs-training.csv"  # Ensure this file is in your project directory
+        df = pd.read_csv(file_path)
+        df = df.rename(columns={'SeriousDlqin2yrs': 'default'})
+        df = df.drop(columns=['Unnamed: 0'], errors='ignore')  # Drop index column if present
 
-    # Handle missing values early
-    num_imputer = SimpleImputer(strategy='median')
-    df[df.columns] = num_imputer.fit_transform(df)
+        # Handle missing values early
+        num_imputer = SimpleImputer(strategy='median')
+        df[df.columns] = num_imputer.fit_transform(df)
 
-    # Balance the dataset using random undersampling
-    df_majority = df[df['default'] == 0]
-    df_minority = df[df['default'] == 1]
-    df_majority_downsampled = resample(df_majority,
-                                       replace=False,
-                                       n_samples=len(df_minority),
-                                       random_state=123)
-    df_balanced = pd.concat([df_majority_downsampled, df_minority])
-    return df_balanced
+        # Balance the dataset using random undersampling
+        df_majority = df[df['default'] == 0]
+        df_minority = df[df['default'] == 1]
+        df_majority_downsampled = resample(df_majority,
+                                           replace=False,
+                                           n_samples=len(df_minority),
+                                           random_state=123)
+        df_balanced = pd.concat([df_majority_downsampled, df_minority])
+        # Reset indices to ensure consistency
+        df_balanced = df_balanced.reset_index(drop=True)
+        return df_balanced
+    except Exception as e:
+        st.error(f"Failed to load dataset: {str(e)}. Please ensure 'cs-training.csv' is in the project directory.")
+        return pd.DataFrame()
 
 df = load_data()
+if df.empty:
+    st.stop()  # Halt execution if dataset loading fails
 st.write("Dataset Loaded:", df.head())
 
 # Feature Engineering: Bin Age into Groups and Add Interaction Term
@@ -115,7 +123,7 @@ for feature in selected_features:
         df_woe = df_woe.drop(columns=[feature])
         selected_features.remove(feature)
 
-# 3. Train-Test Split
+# 3狼. Train-Test Split
 X = df_woe[selected_features]
 y = df_woe['default']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=123)
@@ -261,7 +269,7 @@ if optb_dict[top_feature] is not None:
     ax.tick_params(axis='x', rotation=45)
 else:
     ax.text(0.5, 0.5, 'WoE not available for top feature', ha='center')
-    ax.set_title(f'WoE Distribution for {top_feature}')
+    ax.set_title(f'Wo Mae Distribution for {top_feature}')
 st.pyplot(fig)
 
 # Distribution of Revolving Utilization
@@ -295,7 +303,7 @@ fig, ax = plt.subplots()
 df_test = X_test.copy()
 df_test['default'] = y_test
 df_test['pred_prob'] = y_pred_prob
-df_test['age'] = df['age'].iloc[X_test.index]
+df_test['age'] = df['age'].iloc[X_test.index].reset_index(drop=True)  # Reset index to align
 sns.scatterplot(x='age', y='pred_prob', hue='default', data=df_test, alpha=0.5, ax=ax)
 ax.set_title('Age vs. Predicted Probability of Default')
 ax.set_xlabel('Age')
@@ -304,7 +312,7 @@ st.pyplot(fig)
 
 # Age vs. Average Predicted PD
 fig, ax = plt.subplots()
-age_pred = df_test.groupby(df['AGE_GROUP'].iloc[X_test.index])['pred_prob'].mean().reset_index()
+age_pred = df_test.groupby(df['AGE_GROUP'].iloc[X_test.index].reset_index(drop=True))['pred_prob'].mean().reset_index()
 sns.barplot(x='AGE_GROUP', y='pred_prob', data=age_pred, ax=ax)
 ax.set_title('Average Predicted PD by Age Group')
 ax.set_xlabel('Age Group')
